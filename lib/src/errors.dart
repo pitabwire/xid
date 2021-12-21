@@ -1,0 +1,3 @@
+
+class InvalidXidException implements Exception{
+}
