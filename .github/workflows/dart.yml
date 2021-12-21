@@ -22,5 +22,5 @@ jobs:
             "expiration": 1570721159347
           }
           EOF
-      - name: Publish package
-        run: pub publish -f
+#      - name: Publish package
+#        run: pub publish -f
