@@ -1,0 +1,16 @@
+name: Test all code changes
+
+on: [push]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+    container:
+      image: google/dart:latest
+    steps:
+      - name: Checkout code for testing
+        uses: actions/checkout@v2pub publish -f
+      - name: Run all tests in project
+        run: dart test test/
