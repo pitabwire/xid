@@ -1,7 +1,7 @@
 name: xid
 description: A Globally Unique ID Generator
-version: 1.0.0
-
+version: 1.0.1
+repository: https://github.com/pitabwire/xid
 environment:
   sdk: '>=2.14.4 <3.0.0'
 

@@ -59,11 +59,6 @@ References:
 - https://en.wikipedia.org/wiki/Universally_unique_identifier
 - https://blog.twitter.com/2010/announcing-snowflake
 
-## Install
-
-```bash
-
-```
 ## Usage
 
 ```dart
