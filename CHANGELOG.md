@@ -1,3 +1,7 @@
+## 1.0.5
+
+- Remove dependancy to dart::io to allow multi platform use
+
 ## 1.0.4
 
 - Correctly indicate license in use
