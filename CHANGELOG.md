@@ -1,3 +1,8 @@
+## 1.0.3
+
+- Update license to reflect correctly
+
+
 ## 1.0.2
 
 - Document public api for the xid object

@@ -73,6 +73,6 @@ void main() {
 // generated id: 9m4e2mr0ui3e8a215n4g
 ```
 
-## Licenses
 
-All source code is licensed under the [MIT License](https://raw.github.com/graham/python_xid/master/LICENSE).
+## License
+Licensed under the [MIT License](https://raw.github.com/pitabwire/xid/master/LICENSE).
