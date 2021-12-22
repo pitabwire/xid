@@ -1,3 +1,7 @@
+## 1.0.6
+
+- Update pubspec description
+
 ## 1.0.5
 
 - Remove dependancy to dart::io to allow multi platform use
