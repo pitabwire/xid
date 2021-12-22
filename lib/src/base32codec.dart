@@ -1,4 +1,3 @@
-import "dart:convert";
 import "dart:typed_data";
 
 const String _base32Chars = "0123456789ABCDEFGHIJKLMNOPQRSTUV";

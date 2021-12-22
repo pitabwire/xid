@@ -1,6 +1,10 @@
 name: xid
-description: A Globally Unique ID Generator
-version: 1.0.1
+description: |
+  Xid is a globally unique id generator library. They are small, fast to generate and ordered.
+  Xid uses the Mongo Object ID algorithm to generate globally unique ids with a (base32) serialization 
+  to make it shorter when transported as a string: https://docs.mongodb.org/manual/reference/object-id/
+
+version: 1.0.2
 repository: https://github.com/pitabwire/xid
 environment:
   sdk: '>=2.14.4 <3.0.0'
