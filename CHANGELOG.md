@@ -1,3 +1,7 @@
+## 1.0.7
+
+- fix to apply dart formatting 
+
 ## 1.0.6
 
 - Update pubspec description

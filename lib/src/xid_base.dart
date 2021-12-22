@@ -77,7 +77,6 @@ class Xid {
   }
 
   List<int> _getMachineId() {
-    
     if (_machineId != null) {
       return _toBytes(_machineId!);
     }
