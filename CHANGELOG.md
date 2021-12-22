@@ -1,3 +1,7 @@
+## 1.0.4
+
+- Correctly indicate license in use
+
 ## 1.0.3
 
 - Update license to reflect correctly
