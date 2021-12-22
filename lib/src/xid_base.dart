@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:xid/src/base32codec.dart';
@@ -20,6 +19,7 @@ const String _allChars = "0123456789abcdefghijklmnopqrstuv";
 ///
 class Xid {
   static String? _machineId;
+  static int? _processId;
   static int? _counterInt;
 
   List<int>? _xidBytes;
@@ -77,14 +77,14 @@ class Xid {
   }
 
   List<int> _getMachineId() {
-    var machineId = _machineId;
-    if (machineId != null) {
-      return _toBytes(machineId);
+    
+    if (_machineId != null) {
+      return _toBytes(_machineId!);
     }
 
-    machineId = Random.secure().nextInt(5170000).toString();
-    _machineId = machineId;
-    return _toBytes(machineId);
+    _processId = Random.secure().nextInt(4194304);
+    _machineId = Random.secure().nextInt(5170000).toString();
+    return _toBytes(_machineId!);
   }
 
   static int _counter() {
@@ -110,8 +110,8 @@ class Xid {
     _xidBytes![5] = machineID[1];
     _xidBytes![6] = machineID[2];
 
-    _xidBytes![7] = (pid >> 8) & 0xff;
-    _xidBytes![8] = (pid) & 0xff;
+    _xidBytes![7] = (_processId! >> 8) & 0xff;
+    _xidBytes![8] = (_processId!) & 0xff;
 
     _xidBytes![9] = (counter >> 16) & 0xff;
     _xidBytes![10] = (counter >> 8) & 0xff;
