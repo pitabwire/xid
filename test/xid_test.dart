@@ -1,9 +1,8 @@
 import 'dart:collection';
-import 'dart:typed_data';
 
+import 'package:test/test.dart';
 import 'package:xid/src/base32codec.dart';
 import 'package:xid/xid.dart';
-import 'package:test/test.dart';
 
 void main() {
   group('Assert xid is created correctly ', () {

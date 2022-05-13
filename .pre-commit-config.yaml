@@ -15,3 +15,17 @@ repos:
     args: ["format", "."]
     language: system
     types: [bash]
+  - id: test-code
+    name: Flutter test code
+    always_run: true
+    entry: flutter
+    args: ["test"]
+    language: system
+    types: [bash]
+  - id: static-code-analysis
+    name: Flutter analyze code
+    always_run: true
+    entry: flutter
+    args: ["analyze"]
+    language: system
+    types: [bash]
