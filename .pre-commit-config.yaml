@@ -1,0 +1,17 @@
+repos:
+- repo: local
+  hooks:
+  - id: lint-code
+    name: Dart Lint code
+    always_run: true
+    entry: dart
+    args: ["fix", "lib", "--apply"]
+    language: system
+    types: [bash]
+  - id: format-code
+    name: Flutter format code
+    always_run: true
+    entry: flutter
+    args: ["format", "."]
+    language: system
+    types: [bash]
