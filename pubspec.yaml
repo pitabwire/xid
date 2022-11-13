@@ -3,12 +3,12 @@ description: |
   Xid is a globally unique id generator. Xids are small, fast to generate, sortable, 
   compact URL-safe string with no configuration or central generator server.
   
-version: 1.0.7
+version: 1.0.8
 repository: https://github.com/pitabwire/xid
 environment:
   sdk: '>=2.14.4 <3.0.0'
 
 dev_dependencies:
-  lints: ^1.0.0
+  lints: ^2.0.1
   test: ^1.16.0
 
