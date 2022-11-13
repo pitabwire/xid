@@ -82,7 +82,7 @@ class Xid {
     }
 
     _processId = Random.secure().nextInt(4194304);
-    _machineId = Random.secure().nextInt(5170000).toString();
+    _machineId = (12307 + Random.secure().nextInt(5170000)).toString();
     return _toBytes(_machineId!);
   }
 
