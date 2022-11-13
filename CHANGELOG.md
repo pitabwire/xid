@@ -1,3 +1,8 @@
+
+## 1.0.11
+
+- fix bug in machine id gen when less than 10k @pitabwire (#3)
+
 ## 1.0.7
 
 - fix to apply dart formatting 
