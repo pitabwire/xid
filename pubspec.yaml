@@ -6,7 +6,7 @@ description: |
 version: 1.0.12
 repository: https://github.com/pitabwire/xid
 environment:
-  sdk: '>=2.14.4 <3.0.0'
+  sdk: '<4.0.0'
 
 dev_dependencies:
   lints: ^1.0.0
