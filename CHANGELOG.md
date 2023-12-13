@@ -1,3 +1,7 @@
+## 1.1.2
+
+- fix issue related to missing gh permission
+
 ## 1.1.1
 
 - fix issue related to publishing reference
