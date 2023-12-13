@@ -1,3 +1,8 @@
+## 1.1.0
+
+- migrate to dart ecosystem publishing mechanisms @pitabwire (#14)
+- introduce matrix testing for all supported versions @pitabwire (#14)
+- cleanup precommit file
 
 ## 1.0.11
 

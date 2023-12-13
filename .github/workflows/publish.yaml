@@ -1,0 +1,16 @@
+
+# A CI configuration to auto-publish pub packages.
+
+name: Publish
+
+on:
+  push:
+    tags: [ 'v[0-9]+.[0-9]+.[0-9]+' ]
+
+jobs:
+  publish:
+    permissions:
+      id-token: write # Required for authentication using OIDC
+    uses: dart-lang/ecosystem/.github/workflows/publish.yaml@v1
+    with:
+      write-comments: false
