@@ -1,5 +1,7 @@
 # Globally Unique ID Generator
 
+[![Build Status](https://github.com/pitabwire/xid/actions/workflows/run_tests.yaml/badge.svg?branch=main)](https://github.com/pitabwire/xid/actions/workflows/run_tests.yaml)
+
 > This project is a dart implementation of the Go Lang library found here: [https://github.com/rs/xid](https://github.com/rs/xid)
 
 __ReadMe is from that project (with some modifications for dart).__
