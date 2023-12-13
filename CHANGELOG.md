@@ -1,3 +1,7 @@
+## 1.1.1
+
+- fix issue related to publishing reference
+
 ## 1.1.0
 
 - migrate to dart ecosystem publishing mechanisms @pitabwire (#14)

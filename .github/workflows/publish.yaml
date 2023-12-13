@@ -11,6 +11,6 @@ jobs:
   publish:
     permissions:
       id-token: write # Required for authentication using OIDC
-    uses: dart-lang/ecosystem/.github/workflows/publish.yaml@v1
+    uses: dart-lang/ecosystem/.github/workflows/publish.yaml@main
     with:
-      write-comments: false
+      write-comments: true
