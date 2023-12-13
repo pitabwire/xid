@@ -11,8 +11,8 @@ repos:
   - id: format-code
     name: Flutter format code
     always_run: true
-    entry: flutter
-    args: ["format", "."]
+    entry: dart
+    args: ["format", "--fix", "."]
     language: system
     types: [bash]
   - id: test-code

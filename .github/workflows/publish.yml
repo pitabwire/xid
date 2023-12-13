@@ -1,22 +1,19 @@
 
-name: Publish plugin
+# A CI configuration to auto-publish pub packages.
+
+name: Publish
 
 on:
-  release:
-    types: [published]
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    tags: [ 'v[0-9]+.[0-9]+.[0-9]+' ]
 
 jobs:
   publish:
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v1
-      - name: Publish
-        uses: sakebook/actions-flutter-pub-publisher@v1.4.0
-        with:
-          credential: ${{ secrets.CREDENTIAL_JSON }}
-          flutter_package: true
-          skip_test: false
-          dry_run: false
+    permissions:
+      id-token: write # Required for authentication using OIDC
+    uses: dart-lang/ecosystem/.github/workflows/publish.yaml@v1
+    with:
+      write-comments: false
