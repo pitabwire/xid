@@ -98,7 +98,7 @@ class Xid {
     var counter = _counter();
     var machineID = _getMachineId();
 
-    _xidBytes = List.filled(20, 0, growable: false);
+    _xidBytes = List.filled(12, 0, growable: false);
 
     _xidBytes![0] = (now >> 24) & 0xff;
     _xidBytes![1] = (now >> 16) & 0xff;
