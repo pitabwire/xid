@@ -1,3 +1,7 @@
+## 1.2.1
+
+- update readme file to reflect repo
+
 ## 1.2.0
 
 - stop supporting dart versions prior to 2.17.0
