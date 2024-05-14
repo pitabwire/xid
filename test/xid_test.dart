@@ -75,6 +75,21 @@ void main() {
         true,
       );
     });
+
+    final xidStructure = Xid();
+    test('Binary data length test', () {
+      // Sample binary data
+      List<int> binaryData = xidStructure.toBytes();
+
+      // Convert binary data to string
+      String binaryString = xidStructure.toString();
+
+      // Check if binary data is 12 bytes in length
+      expect(binaryData.length, 12);
+
+      // Check if string representation of binary data is 20 characters in length
+      expect(binaryString.length, 20);
+    });
   });
 }
 
