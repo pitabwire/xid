@@ -2,7 +2,7 @@
 
 [![Build Status](https://github.com/pitabwire/xid/actions/workflows/run_tests.yaml/badge.svg?branch=main)](https://github.com/pitabwire/xid/actions/workflows/run_tests.yaml)
 
-> This project is a dart implementation of the Go Lang library found here: [https://github.com/rs/xid](https://github.com/rs/xid)
+> This project [https://github.com/pitabwire/xid](https://github.com/pitabwire/xid) is a dart implementation of the Go Lang library found here: [https://github.com/rs/xid](https://github.com/rs/xid)
 
 __ReadMe is from that project (with some modifications for dart).__
 
@@ -64,12 +64,13 @@ References:
 ## Usage
 
 ```dart
+import 'dart:developer';
+
 import 'package:xid/xid.dart';
 
 void main() {
   var xid = Xid();
-  print('generated id: $xid');
-
+  log('generated id: $xid');
 }
 
 // generated id: 9m4e2mr0ui3e8a215n4g
