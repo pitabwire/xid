@@ -1,6 +1,8 @@
+import 'dart:developer';
+
 import 'package:xid/xid.dart';
 
 void main() {
   var xid = Xid();
-  print('generated id: $xid');
+  log('generated id: $xid');
 }

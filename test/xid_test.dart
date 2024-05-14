@@ -20,7 +20,7 @@ void main() {
       0x2d,
       0xc9
     ];
-    final idString = "9m4e2mr0ui3e8a215n4g";
+    const idString = "9m4e2mr0ui3e8a215n4g";
     test('Encoding works well', () {
       expect(base32encode(idBytes), idString.toUpperCase());
       expect(Xid.fromString(idString).toBytes(), idBytes);
@@ -42,7 +42,7 @@ void main() {
       0x2d,
       0xc9
     ];
-    final decodeIdString = "9m4e2mr0ui3e8a215n4g";
+    const decodeIdString = "9m4e2mr0ui3e8a215n4g";
 
     test('Decoding works well', () {
       expect(base32decode(decodeIdString), decodeIdBytes);

@@ -1,3 +1,9 @@
+## 1.2.0
+
+- stop supporting dart versions prior to 2.17.0
+- switch to using flutter_lint away from lints
+- optimize memory usage when declaring binary structure
+
 ## 1.1.2
 
 - fix issue related to missing gh permission
