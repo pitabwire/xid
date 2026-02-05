@@ -13,6 +13,6 @@ jobs:
       image: dart:${{ matrix.dart_version }}
     steps:
       - name: Checkout code for testing
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Run all tests in project
         run: dart test test/
