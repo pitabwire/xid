@@ -1,0 +1,182 @@
+name: Dependabot Auto-Merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get PR details
+        id: pr-details
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            console.log('PR Title:', pullRequest.title);
+            console.log('PR Labels:', pullRequest.labels.map(l => l.name));
+
+            return {
+              title: pullRequest.title,
+              labels: pullRequest.labels.map(l => l.name),
+              isDependabot: pullRequest.user.login === 'dependabot[bot]'
+            };
+
+      - name: Wait for status checks
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const maxWaitTime = 20 * 60 * 1000; // 20 minutes
+            const pollInterval = 30 * 1000; // 30 seconds
+            const startTime = Date.now();
+
+            while (Date.now() - startTime < maxWaitTime) {
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.payload.pull_request.head.sha,
+              });
+
+              const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: context.payload.pull_request.head.sha,
+              });
+
+              // Check if all checks are completed
+              const allChecks = [...checks.check_runs, ...statuses];
+              const pendingChecks = allChecks.filter(check =>
+                check.status === 'in_progress' ||
+                check.status === 'queued' ||
+                check.state === 'pending'
+              );
+
+              if (pendingChecks.length === 0) {
+                console.log('All checks completed');
+                break;
+              }
+
+              console.log(`Waiting for ${pendingChecks.length} checks to complete...`);
+              await new Promise(resolve => setTimeout(resolve, pollInterval));
+            }
+
+      - name: Check if tests passed
+        id: check-tests
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { data: checks } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.payload.pull_request.head.sha,
+            });
+
+            const { data: statuses } = await github.rest.repos.listCommitStatusesForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.payload.pull_request.head.sha,
+            });
+
+            // Check all checks and statuses
+            const allChecks = [...checks.check_runs, ...statuses];
+            const failedChecks = allChecks.filter(check =>
+              check.conclusion === 'failure' ||
+              check.state === 'failure' ||
+              check.conclusion === 'cancelled' ||
+              check.state === 'error'
+            );
+
+            const successfulChecks = allChecks.filter(check =>
+              check.conclusion === 'success' ||
+              check.state === 'success'
+            );
+
+            console.log(`Total checks: ${allChecks.length}`);
+            console.log(`Successful checks: ${successfulChecks.length}`);
+            console.log(`Failed checks: ${failedChecks.length}`);
+
+            if (failedChecks.length > 0) {
+              console.log('Some checks failed:', failedChecks.map(c => c.name || c.context));
+              core.setOutput('tests-passed', 'false');
+              return false;
+            }
+
+            if (successfulChecks.length === 0) {
+              console.log('No successful checks found yet');
+              core.setOutput('tests-passed', 'false');
+              return false;
+            }
+
+            console.log('All checks passed!');
+            core.setOutput('tests-passed', 'true');
+            return true;
+
+      - name: Enable auto-merge
+        if: steps.check-tests.outputs.tests-passed == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              event: 'APPROVE',
+              body: 'Auto-approving Dependabot PR after successful tests'
+            });
+
+      - name: Merge PR
+        if: steps.check-tests.outputs.tests-passed == 'true'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            try {
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+                commit_title: `Auto-merge: ${context.payload.pull_request.title}`,
+                commit_message: 'Automatically merged by Dependabot after successful tests',
+                merge_method: 'squash'
+              });
+
+              console.log('PR merged successfully!');
+            } catch (error) {
+              console.log('Failed to merge PR:', error.message);
+
+              // Comment on PR about merge failure
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `Auto-merge failed: ${error.message}\n\nPlease merge manually after reviewing.`
+              });
+            }
+
+      - name: Comment on failure
+        if: steps.check-tests.outputs.tests-passed == 'false'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: 'Auto-merge cancelled: Tests failed or are still pending. Please check the test results and merge manually if appropriate.'
+            });

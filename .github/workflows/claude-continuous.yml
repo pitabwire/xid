@@ -1,0 +1,265 @@
+name: Claude Continuous Work
+
+on:
+  schedule:
+    # Run every 2 hours during work hours (UTC)
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      max_issues:
+        description: 'Maximum number of issues to process'
+        required: false
+        default: '3'
+
+concurrency:
+  group: claude-continuous
+  cancel-in-progress: false
+
+jobs:
+  find-work:
+    runs-on: ubuntu-latest
+    outputs:
+      issues: ${{ steps.find.outputs.issues }}
+      has_work: ${{ steps.find.outputs.has_work }}
+    steps:
+      - name: Find open Claude issues
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MAX_ISSUES="${{ github.event.inputs.max_issues || '3' }}"
+
+          # Find open issues with 'claude' label that don't have linked PRs
+          ISSUES=$(gh issue list \
+            --repo ${{ github.repository }} \
+            --label "claude" \
+            --state open \
+            --limit "$MAX_ISSUES" \
+            --json number,title,labels,updatedAt \
+            --jq '[.[] | select(.labels | map(.name) | any(. == "in-progress" or . == "blocked") | not)] | .[0:'"$MAX_ISSUES"']')
+
+          echo "Found issues: $ISSUES"
+
+          # Check if any issues found
+          ISSUE_COUNT=$(echo "$ISSUES" | jq 'length')
+
+          if [ "$ISSUE_COUNT" -gt 0 ]; then
+            echo "has_work=true" >> $GITHUB_OUTPUT
+            echo "issues=$ISSUES" >> $GITHUB_OUTPUT
+            echo "✅ Found $ISSUE_COUNT issue(s) to work on"
+          else
+            echo "has_work=false" >> $GITHUB_OUTPUT
+            echo "issues=[]" >> $GITHUB_OUTPUT
+            echo "ℹ️ No open claude-labeled issues found"
+          fi
+
+  process-issue:
+    needs: find-work
+    if: needs.find-work.outputs.has_work == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        issue: ${{ fromJson(needs.find-work.outputs.issues) }}
+      max-parallel: 1  # Process one issue at a time
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if issue already has PR
+        id: check-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISSUE_NUM="${{ matrix.issue.number }}"
+
+          # Check for linked PRs
+          PR_COUNT=$(gh pr list \
+            --repo ${{ github.repository }} \
+            --search "closes #$ISSUE_NUM OR fixes #$ISSUE_NUM OR resolves #$ISSUE_NUM" \
+            --json number \
+            --jq 'length')
+
+          if [ "$PR_COUNT" -gt 0 ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Issue #$ISSUE_NUM already has PR, skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Issue #$ISSUE_NUM ready for work"
+          fi
+
+      - name: Mark issue as in-progress
+        if: steps.check-pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISSUE_NUM="${{ matrix.issue.number }}"
+          gh issue edit "$ISSUE_NUM" --add-label "in-progress"
+          gh issue comment "$ISSUE_NUM" --body "🤖 Claude is now working on this issue automatically."
+
+      - name: Determine complexity and model
+        id: complexity
+        if: steps.check-pr.outputs.skip != 'true'
+        run: |
+          MODEL="claude-sonnet-4-5"
+
+          # Check labels for complexity
+          LABELS='${{ toJson(matrix.issue.labels.*.name) }}'
+
+          if echo "$LABELS" | grep -qE "complex|architecture|refactor|performance"; then
+            MODEL="claude-opus-4-6"
+            echo "🔍 Complex issue detected, using Opus"
+          elif echo "$LABELS" | grep -qE "bug|hotfix|simple|documentation"; then
+            MODEL="claude-sonnet-4-5"
+            echo "⚡ Simple issue detected, using Sonnet"
+          else
+            # Check issue body length
+            ISSUE_BODY='${{ matrix.issue.title }} ${{ matrix.issue.body }}'
+            BODY_LENGTH=$(echo "$ISSUE_BODY" | wc -c)
+
+            if [ "$BODY_LENGTH" -gt 1000 ]; then
+              MODEL="claude-opus-4-6"
+              echo "📊 Long issue description, using Opus"
+            else
+              MODEL="claude-sonnet-4-5"
+              echo "📊 Standard issue, using Sonnet"
+            fi
+          fi
+
+          echo "model=$MODEL" >> $GITHUB_OUTPUT
+
+      - name: Work on issue with Claude
+        id: claude
+        if: steps.check-pr.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          additional_permissions: |
+            actions: read
+
+          prompt: |
+            # Continuous Work Mode - Issue #${{ matrix.issue.number }}
+
+            You are working in **continuous automation mode** on this issue. Your goal is to:
+
+            1. **Understand** the issue completely
+            2. **Implement** a complete solution
+            3. **Test** your implementation
+            4. **Create a PR** when done
+
+            ## Issue Details
+            - **Issue**: #${{ matrix.issue.number }}
+            - **Title**: ${{ matrix.issue.title }}
+            - **Repository**: ${{ github.repository }}
+            - **Model**: ${{ steps.complexity.outputs.model }}
+
+            ## Work Instructions
+
+            ### Step 1: Analyze
+            - Read the issue description carefully
+            - Check CLAUDE.md and project docs for guidelines
+            - Identify all requirements and acceptance criteria
+            - Plan your implementation approach
+
+            ### Step 2: Implement
+            - Write clean, well-tested code
+            - Follow project conventions and patterns
+            - Add appropriate tests
+            - Ensure all existing tests still pass
+
+            ### Step 3: Verify
+            - Run all tests: `npm test`, `flutter test`, `go test`, `pytest`, etc.
+            - Check for linting errors
+            - Verify the solution meets all requirements
+
+            ### Step 4: Deliver
+            - Commit your changes with a clean commit message
+            - Create a PR that closes this issue:
+              ```bash
+              gh pr create --title "Fix: <descriptive title>" --body "## Summary
+              <what you implemented>
+
+              ## Changes
+              - <change 1>
+              - <change 2>
+
+              ## Testing
+              - <how you tested>
+
+              Closes #${{ matrix.issue.number }}"
+              ```
+
+            ## Important Rules
+            - Work iteratively but aim for completion
+            - If blocked, add "blocked" label and comment explaining why
+            - If you need clarification, add "needs-info" label and ask questions
+            - Do NOT add co-author attributions to commits
+            - Follow the commit message format: imperative, max 72 chars
+
+            ## Context
+            Check for project-specific guidelines in:
+            - CLAUDE.md
+            - .claude/ directory
+            - docs/ directory
+            - CONTRIBUTING.md
+
+            Now, begin working on this issue systematically.
+
+          # track_progress not supported for schedule/workflow_dispatch events
+          track_progress: false
+
+          claude_args: |
+            --model "${{ steps.complexity.outputs.model }}"
+            --max-turns ${{ steps.complexity.outputs.model == 'claude-opus-4-6' && '150' || '100' }}
+            --allowedTools "Bash(git:*),Bash(gh issue:*),Bash(gh pr:*),Bash(gh repo:*),Bash(gh api:*),Bash(npm:*),Bash(npx:*),Bash(flutter:*),Bash(dart:*),Bash(pytest:*),Bash(go:*),Edit,Write,Read,Glob,Grep,LS,WebSearch,WebFetch,Task"
+            --timeout ${{ steps.complexity.outputs.model == 'claude-opus-4-6' && '2700000' || '1800000' }}
+
+      - name: Check completion status
+        if: always() && steps.check-pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISSUE_NUM="${{ matrix.issue.number }}"
+
+          # Check if PR was created
+          PR_COUNT=$(gh pr list \
+            --repo ${{ github.repository }} \
+            --search "closes #$ISSUE_NUM OR fixes #$ISSUE_NUM OR resolves #$ISSUE_NUM" \
+            --json number \
+            --jq 'length')
+
+          if [ "$PR_COUNT" -gt 0 ]; then
+            echo "✅ PR created successfully for issue #$ISSUE_NUM"
+            gh issue edit "$ISSUE_NUM" --remove-label "in-progress"
+          else
+            echo "⚠️ No PR created yet for issue #$ISSUE_NUM"
+
+            # Check if blocked or needs info
+            LABELS=$(gh issue view "$ISSUE_NUM" --json labels --jq '.labels[].name')
+
+            if echo "$LABELS" | grep -qE "blocked|needs-info"; then
+              echo "ℹ️ Issue is blocked or needs more information"
+              gh issue edit "$ISSUE_NUM" --remove-label "in-progress"
+            else
+              # Keep in-progress label for retry
+              gh issue comment "$ISSUE_NUM" --body "⚠️ Work in progress. Claude will continue in the next scheduled run."
+            fi
+          fi
+
+  summary:
+    needs: [find-work, process-issue]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report summary
+        run: |
+          if [ "${{ needs.find-work.outputs.has_work }}" == "true" ]; then
+            echo "✅ Continuous work cycle completed"
+            echo "Issues processed: $(echo '${{ needs.find-work.outputs.issues }}' | jq 'length')"
+          else
+            echo "ℹ️ No work to do - all claude-labeled issues are complete or blocked"
+          fi

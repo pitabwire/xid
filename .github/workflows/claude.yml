@@ -1,0 +1,325 @@
+name: Claude Code
+
+on:
+  issues:
+    types: [labeled, opened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  schedule:
+    # Check for incomplete claude-labeled issues every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to work on'
+        required: false
+      force_model:
+        description: 'Force specific model (sonnet/opus)'
+        required: false
+        default: 'auto'
+
+# Prevent multiple Claude instances from running simultaneously on the same issue/PR
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number || 'scheduled' }}
+  cancel-in-progress: false
+
+env:
+  MAX_RUNTIME_MINUTES: 45
+
+jobs:
+  # Determine which model to use based on task complexity
+  determine-model:
+    runs-on: ubuntu-latest
+    outputs:
+      model: ${{ steps.model-selection.outputs.model }}
+      should_run: ${{ steps.check-permissions.outputs.should_run }}
+    steps:
+      - name: Check permissions and triggers
+        id: check-permissions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHOULD_RUN="false"
+
+          # For label events: anyone with write access can add labels (GitHub enforces this)
+          if [ "${{ github.event_name }}" == "issues" ] && [ "${{ github.event.action }}" == "labeled" ]; then
+            if [ "${{ github.event.label.name }}" == "claude" ]; then
+              SHOULD_RUN="true"
+            fi
+          fi
+
+          # For opened issues with 'claude' label
+          if [ "${{ github.event_name }}" == "issues" ] && [ "${{ github.event.action }}" == "opened" ]; then
+            LABELS=$(echo '${{ toJson(github.event.issue.labels.*.name) }}' | jq -r '.[]')
+            if echo "$LABELS" | grep -q "claude"; then
+              SHOULD_RUN="true"
+            fi
+          fi
+
+          # For @claude mentions: check write permissions
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            if echo "${{ github.event.comment.body }}" | grep -q "@claude"; then
+              ASSOC="${{ github.event.comment.author_association }}"
+              if [[ "$ASSOC" == "OWNER" || "$ASSOC" == "MEMBER" || "$ASSOC" == "COLLABORATOR" ]]; then
+                SHOULD_RUN="true"
+              fi
+            fi
+          fi
+
+          # For PR reviews/comments: check write permissions
+          if [[ "${{ github.event_name }}" == "pull_request_review" || "${{ github.event_name }}" == "pull_request_review_comment" ]]; then
+            BODY="${{ github.event.review.body }}${{ github.event.comment.body }}"
+            if echo "$BODY" | grep -q "@claude"; then
+              ASSOC="${{ github.event.review.author_association }}${{ github.event.comment.author_association }}"
+              if [[ "$ASSOC" == "OWNER" || "$ASSOC" == "MEMBER" || "$ASSOC" == "COLLABORATOR" ]]; then
+                SHOULD_RUN="true"
+              fi
+            fi
+          fi
+
+          # For scheduled runs and workflow_dispatch
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SHOULD_RUN="true"
+          fi
+
+          echo "should_run=$SHOULD_RUN" >> $GITHUB_OUTPUT
+
+      - name: Determine model based on complexity
+        id: model-selection
+        if: steps.check-permissions.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          MODEL="claude-sonnet-4-5"  # Default to Sonnet
+
+          # Check for forced model
+          if [ "${{ github.event.inputs.force_model }}" == "opus" ]; then
+            MODEL="claude-opus-4-6"
+          elif [ "${{ github.event.inputs.force_model }}" == "sonnet" ]; then
+            MODEL="claude-sonnet-4-5"
+          else
+            # Auto-detect complexity
+
+            # Check labels for complexity hints
+            LABELS="${{ toJson(github.event.issue.labels.*.name) }}${{ toJson(github.event.pull_request.labels.*.name) }}"
+
+            if echo "$LABELS" | grep -qE "claude-opus|complex|architecture|refactor|performance"; then
+              MODEL="claude-opus-4-6"
+            elif echo "$LABELS" | grep -qE "bug|hotfix|documentation|simple|minor"; then
+              MODEL="claude-sonnet-4-5"
+            else
+              # Check issue/PR size and content
+              ISSUE_NUM="${{ github.event.issue.number }}${{ github.event.pull_request.number }}"
+
+              if [ -n "$ISSUE_NUM" ]; then
+                # Get issue/PR body length
+                BODY_LENGTH=$(echo "${{ github.event.issue.body }}${{ github.event.pull_request.body }}" | wc -c)
+
+                # Long descriptions (>1000 chars) likely need Opus
+                if [ "$BODY_LENGTH" -gt 1000 ]; then
+                  MODEL="claude-opus-4-6"
+                fi
+
+                # Check if PR exists and get its size
+                if [ "${{ github.event_name }}" == "pull_request_review" ] || [ "${{ github.event_name }}" == "pull_request_review_comment" ]; then
+                  CHANGES=$(gh pr view ${{ github.event.pull_request.number }} --json additions,deletions --jq '.additions + .deletions' 2>/dev/null || echo "0")
+                  if [ "$CHANGES" -gt 500 ]; then
+                    MODEL="claude-opus-4-6"
+                  fi
+                fi
+              fi
+            fi
+          fi
+
+          echo "model=$MODEL" >> $GITHUB_OUTPUT
+          echo "📊 Selected model: $MODEL"
+
+  claude:
+    needs: determine-model
+    if: needs.determine-model.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find issues to work on (for scheduled runs)
+        id: find-issues
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Find open issues with 'claude' label that don't have a linked PR
+          ISSUE_NUM=$(gh issue list \
+            --label "claude" \
+            --state open \
+            --json number,title,body,labels \
+            --jq '.[0] | .number' \
+            2>/dev/null || echo "")
+
+          if [ -n "$ISSUE_NUM" ]; then
+            echo "issue_number=$ISSUE_NUM" >> $GITHUB_OUTPUT
+            echo "Found issue #$ISSUE_NUM to work on"
+          else
+            echo "No open claude-labeled issues found"
+            echo "issue_number=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check if work is already complete
+        id: check-complete
+        if: github.event_name == 'schedule' && steps.find-issues.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISSUE_NUM="${{ steps.find-issues.outputs.issue_number }}"
+
+          # Check if there's already a PR linked to this issue
+          HAS_PR=$(gh pr list --search "closes #$ISSUE_NUM OR fixes #$ISSUE_NUM OR resolves #$ISSUE_NUM" --json number --jq '. | length')
+
+          if [ "$HAS_PR" -gt 0 ]; then
+            echo "Issue #$ISSUE_NUM already has a PR, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Issue #$ISSUE_NUM needs work"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Claude Code
+        id: claude
+        if: |
+          (github.event_name != 'schedule') ||
+          (steps.check-complete.outputs.skip != 'true' && steps.find-issues.outputs.issue_number != '')
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # This is an optional setting that allows Claude to read CI results on PRs
+          additional_permissions: |
+            actions: read
+
+          # Custom prompt with strict formatting rules
+          prompt: |
+            # Repository Context
+            - Repository: ${{ github.repository }}
+            - Branch: ${{ github.ref_name }}
+            - Event: ${{ github.event_name }}
+            - Model: ${{ needs.determine-model.outputs.model }}
+            ${{ github.event_name == 'schedule' && format('- Scheduled Work: Issue #{0}', steps.find-issues.outputs.issue_number) || '' }}
+
+            # Project-Specific Instructions
+            Check for CLAUDE.md, .claude/*, or docs/ directory for project-specific guidelines.
+
+            # Continuous Work Mode
+            ${{ github.event_name == 'schedule' && 'You are working in continuous mode on open issues. Work iteratively until the issue is complete and a PR is created.' || '' }}
+
+            **IMPORTANT - WHEN WORKING ON ISSUES:**
+            After you finish implementing the code changes and committing them, create a pull request:
+            ```bash
+            gh pr create --title "Your descriptive title" --body "## Summary
+            Your summary of what was implemented.
+
+            ## Changes
+            - List key changes made
+
+            ## Testing
+            - Describe how this was tested
+
+            Closes #${{ github.event.issue.number }}"
+            ```
+            Always include a summary of changes AND "Closes #${{ github.event.issue.number }}" in the body.
+
+            **COMMIT RULES:**
+            - Do NOT add "Co-authored-by" lines to commits
+            - Do NOT add "Generated with Claude Code" or similar attributions
+            - Keep commits clean and professional
+            - Run tests before committing when applicable
+
+            **WHEN WORKING ON PR FEEDBACK:**
+            Make the requested changes and commit. The PR will automatically update - do NOT create a new PR.
+
+            **WHEN FIXING CI FAILURES:**
+            1. Read the CI logs using your actions: read permission
+            2. Understand the root cause of the failure
+            3. Fix the issues, commit the fix
+            4. The CI will automatically re-run
+
+            **SECURITY:**
+            - Never commit secrets, API keys, or credentials
+            - Check for security vulnerabilities in dependencies
+            - Validate and sanitize user inputs
+            - Follow OWASP best practices
+
+            **OUTPUT RULES:**
+
+            ## Commit Message Requirements (max 72 chars)
+            - Imperative mood: "Add" not "Added"
+            - Action verbs: Add, Update, Fix, Remove, Refactor, Implement
+            - No articles (a, an, the)
+            - No punctuation at end
+            - No prefixes like "feat:", "fix:"
+            - Single line only
+            - NO co-author attributions
+
+          # Enable progress tracking (only for events that support it)
+          # track_progress is only supported for: pull_request, issues, issue_comment, pull_request_review_comment, pull_request_review
+          track_progress: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
+
+          # Claude CLI arguments with dynamic model selection
+          claude_args: |
+            --model "${{ needs.determine-model.outputs.model }}"
+            --max-turns ${{ needs.determine-model.outputs.model == 'claude-opus-4-6' && '150' || '100' }}
+            --allowedTools "Bash(git:*),Bash(gh issue:*),Bash(gh pr:*),Bash(gh repo:*),Bash(gh api:*),Bash(npm:*),Bash(npx:*),Bash(flutter:*),Bash(dart:*),Bash(pytest:*),Bash(go test:*),Edit,Write,Read,Glob,Grep,LS,WebSearch,WebFetch,Task"
+            --timeout ${{ needs.determine-model.outputs.model == 'claude-opus-4-6' && '2700000' || '1800000' }}
+
+      # Clean up the comment - remove malformed artifacts and add helpful context
+      - name: Clean up Claude comment
+        if: always() && (github.event_name == 'issues' || github.event_name == 'issue_comment')
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          # Determine the issue number
+          ISSUE_NUM="${{ github.event.issue.number }}"
+
+          # Get the latest comment from Claude on this issue
+          COMMENT_ID=$(gh api repos/${{ github.repository }}/issues/${ISSUE_NUM}/comments \
+            --jq '.[-1] | select(.user.login == "github-actions[bot]" or .user.type == "Bot") | .id')
+
+          if [ -n "$COMMENT_ID" ]; then
+            echo "Cleaning up comment ID: $COMMENT_ID"
+
+            # Get current comment body
+            BODY=$(gh api repos/${{ github.repository }}/issues/comments/$COMMENT_ID --jq '.body')
+
+            # Remove the "Create PR" link and any trailing pipe/whitespace
+            CLEANED=$(echo "$BODY" | sed 's/ • \[Create PR ➔\]([^)]*)//g' | sed 's/[[:space:]]*|[[:space:]]*$//')
+
+            # Update the comment
+            gh api repos/${{ github.repository }}/issues/comments/$COMMENT_ID \
+              -X PATCH \
+              -f body="$CLEANED" || echo "Failed to clean comment, skipping..."
+          else
+            echo "No bot comment found to clean up"
+          fi
+
+      # Report workflow status
+      - name: Report status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Claude workflow completed successfully"
+          else
+            echo "⚠️ Claude workflow completed with status: ${{ job.status }}"
+          fi
