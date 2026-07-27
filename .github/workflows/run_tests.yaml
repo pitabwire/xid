@@ -6,13 +6,16 @@ jobs:
 
   build:
     strategy:
+      fail-fast: false
       matrix:
-        dart_version: [ 2.18,2.19,3.0,3.1,3.2,3.3 ]
+        dart_version: [ "3.3", "3.5", "3.6", "3.7", "stable" ]
     runs-on: ubuntu-latest
     container:
       image: dart:${{ matrix.dart_version }}
     steps:
       - name: Checkout code for testing
         uses: actions/checkout@v5
+      - name: Get dependencies
+        run: dart pub get
       - name: Run all tests in project
         run: dart test test/
